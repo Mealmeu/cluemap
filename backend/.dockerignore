@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+*.pyc.*
+*.pyo
+tests
+.pytest_cache
+cluemap.db
+models
+*.gguf

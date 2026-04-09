@@ -1,0 +1,202 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  runner:
+    build:
+      context: ./runner
+    image: ${SANDBOX_RUNNER_IMAGE}
+    restart: unless-stopped
+    user: "10001:10001"
+    environment:
+      SANDBOX_RUNNER_SHARED_SECRET: ${SANDBOX_RUNNER_SHARED_SECRET}
+      SANDBOX_RUNNER_SIGNATURE_TTL_SECONDS: ${SANDBOX_RUNNER_SIGNATURE_TTL_SECONDS}
+      SANDBOX_RUNNER_NONCE_CACHE_SECONDS: ${SANDBOX_RUNNER_NONCE_CACHE_SECONDS}
+      SANDBOX_RUNNER_MAX_REQUEST_BODY_BYTES: ${SANDBOX_RUNNER_MAX_REQUEST_BODY_BYTES}
+      SANDBOX_TIMEOUT_SECONDS: ${SANDBOX_TIMEOUT_SECONDS}
+      SANDBOX_MEMORY_LIMIT_MB: ${SANDBOX_MEMORY_LIMIT_MB}
+      SANDBOX_OUTPUT_LIMIT_BYTES: ${SANDBOX_OUTPUT_LIMIT_BYTES}
+      SANDBOX_PIDS_LIMIT: ${SANDBOX_PIDS_LIMIT}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 64
+    ulimits:
+      nofile:
+        soft: 32
+        hard: 32
+      nproc: 64
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/healthz').read()\""]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT}
+      DATABASE_URL: ${DATABASE_URL}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      CORS_ORIGINS_RAW: ${CORS_ORIGINS_RAW}
+      TRUSTED_HOSTS_RAW: ${TRUSTED_HOSTS_RAW}
+      CSRF_TRUSTED_ORIGINS_RAW: ${CSRF_TRUSTED_ORIGINS_RAW}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET}
+      COOKIE_SECURE: ${COOKIE_SECURE}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE}
+      CSRF_COOKIE_SAMESITE: ${CSRF_COOKIE_SAMESITE}
+      ALLOW_REFRESH_TOKEN_IN_BODY: ${ALLOW_REFRESH_TOKEN_IN_BODY}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LOCAL_LLM_PROFILE_NAME: ${LOCAL_LLM_PROFILE_NAME}
+      LOCAL_LLM_MODEL_REPO: ${LOCAL_LLM_MODEL_REPO}
+      LOCAL_LLM_MODEL_FILE: ${LOCAL_LLM_MODEL_FILE}
+      LOCAL_LLM_DOWNLOAD_REPO: ${LOCAL_LLM_DOWNLOAD_REPO}
+      LOCAL_LLM_DOWNLOAD_FILE: ${LOCAL_LLM_DOWNLOAD_FILE}
+      LOCAL_LLM_MODEL_DIR: ${LOCAL_LLM_MODEL_DIR}
+      LOCAL_LLM_AUTO_DOWNLOAD: ${LOCAL_LLM_AUTO_DOWNLOAD}
+      LOCAL_LLM_CHAT_FORMAT: ${LOCAL_LLM_CHAT_FORMAT}
+      LOCAL_LLM_N_CTX: ${LOCAL_LLM_N_CTX}
+      LOCAL_LLM_N_THREADS: ${LOCAL_LLM_N_THREADS}
+      LOCAL_LLM_N_GPU_LAYERS: ${LOCAL_LLM_N_GPU_LAYERS}
+      LOCAL_LLM_TEMPERATURE: ${LOCAL_LLM_TEMPERATURE}
+      LOCAL_LLM_TOP_P: ${LOCAL_LLM_TOP_P}
+      LOCAL_LLM_TOP_K: ${LOCAL_LLM_TOP_K}
+      LOCAL_LLM_REPEAT_PENALTY: ${LOCAL_LLM_REPEAT_PENALTY}
+      LOCAL_LLM_MAX_TOKENS: ${LOCAL_LLM_MAX_TOKENS}
+      SANDBOX_MODE: ${SANDBOX_MODE}
+      SANDBOX_RUNNER_IMAGE: ${SANDBOX_RUNNER_IMAGE}
+      SANDBOX_RUNNER_URL: ${SANDBOX_RUNNER_URL}
+      SANDBOX_RUNNER_SHARED_SECRET: ${SANDBOX_RUNNER_SHARED_SECRET}
+      SANDBOX_RUNNER_SIGNATURE_TTL_SECONDS: ${SANDBOX_RUNNER_SIGNATURE_TTL_SECONDS}
+      SANDBOX_TIMEOUT_SECONDS: ${SANDBOX_TIMEOUT_SECONDS}
+      SANDBOX_MEMORY_LIMIT_MB: ${SANDBOX_MEMORY_LIMIT_MB}
+      SANDBOX_OUTPUT_LIMIT_BYTES: ${SANDBOX_OUTPUT_LIMIT_BYTES}
+      SANDBOX_PIDS_LIMIT: ${SANDBOX_PIDS_LIMIT}
+      RUN_SEED_ON_START: ${RUN_SEED_ON_START}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      runner:
+        condition: service_healthy
+    volumes:
+      - ./backend/models:/models
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    mem_limit: 2g
+    cpus: 2.00
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\""]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=16m
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /usr/share/nginx/html/index.html && nginx -t || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    networks:
+      - internal
+
+  nginx:
+    build:
+      context: ./infra/nginx
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      ENABLE_TLS: ${ENABLE_TLS}
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d:rw,noexec,nosuid,size=1m
+      - /tmp:rw,noexec,nosuid,size=32m
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m
+      - /var/run:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    networks:
+      - internal
+      - edge
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  edge:
+    driver: bridge
+
+volumes:
+  postgres_data:
