@@ -158,6 +158,7 @@ services:
     build:
       context: ./infra/nginx
     restart: unless-stopped
+    user: "101:101"
     depends_on:
       frontend:
         condition: service_healthy
@@ -173,10 +174,10 @@ services:
       - ./infra/nginx/certs:/etc/nginx/certs:ro
     read_only: true
     tmpfs:
-      - /etc/nginx/conf.d:rw,noexec,nosuid,size=1m
-      - /tmp:rw,noexec,nosuid,size=32m
-      - /var/cache/nginx:rw,noexec,nosuid,size=64m
-      - /var/run:rw,noexec,nosuid,size=16m
+      - /etc/nginx/conf.d:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0755
+      - /tmp:rw,noexec,nosuid,size=32m,uid=101,gid=101,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m,uid=101,gid=101,mode=0755
+      - /var/run:rw,noexec,nosuid,size=16m,uid=101,gid=101,mode=0755
     cap_drop:
       - ALL
     security_opt:
